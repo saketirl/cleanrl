@@ -56,15 +56,23 @@ class Args:
     policy_frequency: int = 2
     """the frequency of training policy (delayed)"""
     target_network_frequency: int = 1  # Denis Yarats' implementation delays this by 2.
-    """the frequency of updates for the target nerworks"""
+    """the frequency of updates for the target networks"""
     alpha: float = 0.2
     """Entropy regularization coefficient."""
     autotune: bool = True
     """automatic tuning of the entropy coefficient"""
+
+    crate_step_size: float = 0.1
+    """The step size for crate policy"""
     actor_width: int = 256
     """Width of the actor network"""
+    lambd: float = 0.1
+    """Lambda for crate policy"""
+    q_crate_step_size: float = 0.1
+    """Step size for q function"""
     q_width: int = 256
-    """"Width of the Q network"""
+    """Width of the Q network"""
+
 
 
 def make_env(env_id, seed, idx, capture_video, run_name):
@@ -82,35 +90,69 @@ def make_env(env_id, seed, idx, capture_video, run_name):
     return thunk
 
 
+class PreNorm(nn.Module):
+    def __init__(self, dim, fn):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim)
+        self.fn = fn
+
+    def forward(self, x, **kwargs):
+        return self.fn(self.norm(x), **kwargs)
+
+
+
+class FeedForwardCRATE(nn.Module):
+    def __init__(self, dim, step_size=0.1, lambd=0.1):
+        super().__init__()
+        self.weight = nn.Parameter(torch.Tensor(dim, dim))
+        with torch.no_grad():
+            nn.init.kaiming_uniform_(self.weight)
+        self.step_size = step_size
+        self.lambd = lambd
+
+    def forward(self, x):
+        # compute D^T * D * x
+        x1 = F.linear(x, self.weight, bias=None)
+        grad_1 = F.linear(x1, self.weight.t(), bias=None)
+        # compute D^T * x
+        grad_2 = F.linear(x, self.weight.t(), bias=None)
+        # compute negative gradient update: step_size * (D^T * x - D^T * D * x)
+        grad_update = self.step_size * (grad_2 - grad_1) - self.step_size * self.lambd
+
+        output = F.relu(x + grad_update)
+        return output
+
+
 # ALGO LOGIC: initialize agent here:
-class SoftQNetwork(nn.Module):
-    def __init__(self, env, width=256):
+class SoftQNetworkCRATE(nn.Module):
+    def __init__(self, env, width=256, crate_step_size=0.1, lambd=0.1):
         super().__init__()
         self.width = width
+        self.crate_step_size = crate_step_size
         self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod() + np.prod(env.single_action_space.shape), self.width)
-        self.fc2 = nn.Linear(self.width, self.width)
+        self.fc2 = PreNorm(self.width, FeedForwardCRATE(self.width, step_size=crate_step_size, lambd=lambd))
         self.fc3 = nn.Linear(self.width, 1)
 
     def forward(self, x, a):
         x = torch.cat([x, a], 1)
         x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = self.fc2(x)
         x = self.fc3(x)
         return x
-
 
 LOG_STD_MAX = 2
 LOG_STD_MIN = -5
 
 
 class Actor(nn.Module):
-    def __init__(self, env, width=256):
+    def __init__(self, env, width=256, crate_step_size=0.1, lambd=0.1):
         super().__init__()
         self.width = width
-        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod(), self.width)
-        self.fc2 = nn.Linear(self.width, self.width)
-        self.fc_mean = nn.Linear(self.width, np.prod(env.single_action_space.shape))
-        self.fc_logstd = nn.Linear(self.width, np.prod(env.single_action_space.shape))
+        self.lambd = lambd
+        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod(), self.width, dtype=torch.float32)
+        self.fc2 = PreNorm(self.width, FeedForwardCRATE(self.width, step_size=crate_step_size, lambd=self.lambd))
+        self.fc_mean = nn.Linear(self.width, np.prod(env.single_action_space.shape), dtype=torch.float32)
+        self.fc_logstd = nn.Linear(self.width, np.prod(env.single_action_space.shape), dtype=torch.float32)
         # action rescaling
         self.register_buffer(
             "action_scale", torch.tensor((env.action_space.high - env.action_space.low) / 2.0, dtype=torch.float32)
@@ -121,7 +163,7 @@ class Actor(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
+        x = self.fc2(x)
         mean = self.fc_mean(x)
         log_std = self.fc_logstd(x)
         log_std = torch.tanh(log_std)
@@ -190,11 +232,11 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     max_action = float(envs.single_action_space.high[0])
 
-    actor = Actor(envs, width=args.actor_width).to(device)
-    qf1 = SoftQNetwork(envs, width=args.q_width).to(device)
-    qf2 = SoftQNetwork(envs, width=args.q_width).to(device)
-    qf1_target = SoftQNetwork(envs, width=args.q_width).to(device)
-    qf2_target = SoftQNetwork(envs, width=args.q_width).to(device)
+    actor = Actor(envs, crate_step_size=args.crate_step_size, width=args.actor_width, lambd=args.lambd).to(device)
+    qf1 = SoftQNetworkCRATE(envs, width=args.q_width, crate_step_size=args.q_crate_step_size).to(device)
+    qf2 = SoftQNetworkCRATE(envs, width=args.q_width, crate_step_size=args.q_crate_step_size).to(device)
+    qf1_target = SoftQNetworkCRATE(envs, width=args.q_width, crate_step_size=args.q_crate_step_size).to(device)
+    qf2_target = SoftQNetworkCRATE(envs, width=args.q_width, crate_step_size=args.q_crate_step_size).to(device)
     qf1_target.load_state_dict(qf1.state_dict())
     qf2_target.load_state_dict(qf2.state_dict())
     q_optimizer = optim.Adam(list(qf1.parameters()) + list(qf2.parameters()), lr=args.q_lr)
@@ -224,7 +266,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     for global_step in range(args.total_timesteps):
         # ALGO LOGIC: put action logic here
         if global_step < args.learning_starts:
-            actions = np.array([envs.single_action_space.sample() for _ in range(envs.num_envs)])
+            actions = np.array([envs.single_action_space.sample() for _ in range(envs.num_envs)], dtype=np.float32)
         else:
             actions, _, _ = actor.get_action(torch.Tensor(obs).to(device))
             actions = actions.detach().cpu().numpy()
