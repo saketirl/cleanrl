@@ -15,6 +15,8 @@ cd /users/stiwari4/data/stiwari4/ratereduction/cleanrl/
 
 wandb login 9fb4ba17a708de72496774b2e25d219f07de038d
 
+python cleanrl/sac_continuous_action.py     --seed 17     --env-id dm_control/dog-trot-v0 --total-timesteps 4000000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/dog-trot/run5.out &
+python cleanrl/sac_continuous_action.py     --seed 18    --env-id dm_control/dog-trot-v0 --total-timesteps 4000000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/dog-trot/run6.out
 python cleanrl/sac_continuous_action.py     --seed 19     --env-id dm_control/dog-trot-v0 --total-timesteps 4000000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/dog-trot/run7.out &
 python cleanrl/sac_continuous_action.py     --seed 20     --env-id dm_control/dog-trot-v0 --total-timesteps 4000000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/dog-trot/run8.out
 python cleanrl/sac_continuous_action.py     --seed 21     --env-id dm_control/dog-trot-v0 --total-timesteps 4000000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/dog-trot/run13.out &

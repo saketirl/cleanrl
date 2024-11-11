@@ -15,12 +15,12 @@ cd /users/stiwari4/data/stiwari4/ratereduction/cleanrl/
 
 wandb login 9fb4ba17a708de72496774b2e25d219f07de038d
 
-python cleanrl/sac_continuous_action.py     --seed 21     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/ant/run1.out &
-python cleanrl/sac_continuous_action.py     --seed 22     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/ant/run2.out
-python cleanrl/sac_continuous_action.py     --seed 23     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/ant/run3.out &
-python cleanrl/sac_continuous_action.py     --seed 24     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/ant/run4.out
-python cleanrl/sac_continuous_action.py     --seed 17     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/ant/run9.out &
-python cleanrl/sac_continuous_action.py     --seed 18    --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/ant/run10.out
-python cleanrl/sac_continuous_action.py     --seed 19     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/ant/run11.out &
-python cleanrl/sac_continuous_action.py     --seed 20     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 &> outputs/sac/ant/run12.out
+python cleanrl/sac_continuous_action.py     --seed 21     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 --ckpt-n-step 20000  --ckpt-dir data/sac_ckpt/ant/ &> outputs/sac/ant/run1.out &
+python cleanrl/sac_continuous_action.py     --seed 22     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 --ckpt-n-step 20000  --ckpt-dir data/sac_ckpt/ant/ &> outputs/sac/ant/run2.out
+python cleanrl/sac_continuous_action.py     --seed 23     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 --ckpt-n-step 20000  --ckpt-dir data/sac_ckpt/ant/ &> outputs/sac/ant/run3.out &
+python cleanrl/sac_continuous_action.py     --seed 24     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 --ckpt-n-step 20000  --ckpt-dir data/sac_ckpt/ant/ &> outputs/sac/ant/run4.out
+python cleanrl/sac_continuous_action.py     --seed 17     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 --ckpt-n-step 20000  --ckpt-dir data/sac_ckpt/ant/ &> outputs/sac/ant/run9.out &
+python cleanrl/sac_continuous_action.py     --seed 18    --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 --ckpt-n-step 20000  --ckpt-dir data/sac_ckpt/ant/ &> outputs/sac/ant/run10.out
+python cleanrl/sac_continuous_action.py     --seed 19     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 --ckpt-n-step 20000  --ckpt-dir data/sac_ckpt/ant/ &> outputs/sac/ant/run11.out &
+python cleanrl/sac_continuous_action.py     --seed 20     --env-id Ant-v4 --total-timesteps 500000 --track --actor-width 1024 --q-width 1024 --ckpt-n-step 20000  --ckpt-dir data/sac_ckpt/ant/ &> outputs/sac/ant/run12.out
 sleep 1800

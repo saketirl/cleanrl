@@ -72,6 +72,10 @@ class Args:
     """Step size for q function"""
     q_width: int = 256
     """Width of the Q network"""
+    ckpt_n_step: int = -1
+    """Parameter to checkpoint every nth step"""
+    ckpt_dir: str = "data/ckpt/"
+    """Directory to checkpoint in"""
 
 
 
@@ -226,6 +230,12 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
+    # make dir for data checkpoint
+    if args.ckpt_n_step > 0:
+        os.makedirs(args.ckpt_dir, exist_ok=True)
+        if not args.ckpt_dir.endswith("/"):
+            args.ckpt_dir = args.ckpt_dir + "/"
+
     # env setup
     envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name)])
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
@@ -263,6 +273,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     # TRY NOT TO MODIFY: start the game
     obs, _ = envs.reset(seed=args.seed)
+    run_name_sanitized = run_name.replace("/", "")
+
     for global_step in range(args.total_timesteps):
         # ALGO LOGIC: put action logic here
         if global_step < args.learning_starts:
@@ -356,6 +368,18 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
                 if args.autotune:
                     writer.add_scalar("losses/alpha_loss", alpha_loss.item(), global_step)
+
+            if args.ckpt_n_step > 0 and (global_step % args.ckpt_n_step == 0 or global_step - 1 == args.learning_starts):
+                actor_file_out_name = args.ckpt_dir + run_name_sanitized + "_" + str(global_step) + "_actor.pkl"
+                qf1_file_out_name = args.ckpt_dir + run_name_sanitized + "_" + str(global_step) + "_qf1.pkl"
+                qf2_file_out_name = args.ckpt_dir + run_name_sanitized + "_" + str(global_step) + "_qf1.pkl"
+                qf1_target_file_out_name = args.ckpt_dir + run_name_sanitized + "_" + str(global_step) + "_qf1target.pkl"
+                qf2_target_file_out_name = args.ckpt_dir + run_name_sanitized + "_" + str(global_step) + "_qf2target.pkl"
+                torch.save(actor.state_dict(), actor_file_out_name)
+                torch.save(qf1.state_dict(), qf1_file_out_name)
+                torch.save(qf2.state_dict(), qf2_file_out_name)
+                torch.save(qf1_target.state_dict(), qf1_target_file_out_name)
+                torch.save(qf2_target.state_dict(), qf2_target_file_out_name)
 
     envs.close()
     writer.close()
