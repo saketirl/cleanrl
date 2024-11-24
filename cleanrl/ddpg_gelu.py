@@ -27,7 +27,7 @@ class Args:
     """if toggled, cuda will be enabled by default"""
     track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
-    wandb_project_name: str = "cleanRL"
+    wandb_project_name: str = "crate"
     """the wandb's project name"""
     wandb_entity: str = None
     """the entity (team) of wandb's project"""
@@ -88,7 +88,7 @@ class QNetwork(nn.Module):
     def __init__(self, env, width=256):
         super().__init__()
         self.width = width
-        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod() + np.prod(env.single_action_space.shape), 256)
+        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod() + np.prod(env.single_action_space.shape), self.width)
         self.fc2 = nn.Linear(self.width, self.width)
         self.fc3 = nn.Linear(self.width, 1)
 
@@ -104,9 +104,10 @@ class Actor(nn.Module):
     def __init__(self, env, width=256):
         super().__init__()
         self.width = width
-        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod(), self.width)
-        self.fc2 = nn.Linear(self.width, self.width)
-        self.fc_mu = nn.Linear(self.width, np.prod(env.single_action_space.shape))
+        state_dim = np.array(env.single_observation_space.shape).prod()
+        self.fc1 = nn.Linear(state_dim, self.width, bias=False)
+        self.fc_mu = nn.Linear(self.width, np.prod(env.single_action_space.shape), bias=False)
+        nn.init.normal_(self.fc1.weight, mean=0.0, std=1/state_dim)
         # action rescaling
         self.register_buffer(
             "action_scale", torch.tensor((env.action_space.high - env.action_space.low) / 2.0, dtype=torch.float32)
@@ -116,9 +117,8 @@ class Actor(nn.Module):
         )
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = torch.tanh(self.fc_mu(x))
+        x = F.gelu(self.fc1(x))
+        x = torch.tanh(self.fc_mu(x)/np.sqrt(self.width))
         return x * self.action_scale + self.action_bias
 
 
@@ -163,10 +163,10 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name)])
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    actor = Actor(envs).to(device)
-    qf1 = QNetwork(envs).to(device)
-    qf1_target = QNetwork(envs).to(device)
-    target_actor = Actor(envs).to(device)
+    actor = Actor(envs, width=args.actor_width).to(device)
+    qf1 = QNetwork(envs, width=args.critic_width).to(device)
+    qf1_target = QNetwork(envs, width=args.critic_width).to(device)
+    target_actor = Actor(envs, width=args.actor_width).to(device)
     target_actor.load_state_dict(actor.state_dict())
     qf1_target.load_state_dict(qf1.state_dict())
     q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.learning_rate)

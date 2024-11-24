@@ -27,7 +27,7 @@ class Args:
     """if toggled, cuda will be enabled by default"""
     track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
-    wandb_project_name: str = "cleanRL"
+    wandb_project_name: str = "crate"
     """the wandb's project name"""
     wandb_entity: str = None
     """the entity (team) of wandb's project"""
@@ -67,6 +67,10 @@ class Args:
     """width of the actor network"""
     critic_width: int = 256
     """width of the critic network"""
+    ckpt_n_step: int = -1
+    """Parameter to checkpoint every nth step"""
+    ckpt_dir: str = "data/ckpt/"
+    """Directory to checkpoint in"""
 
 
 def make_env(env_id, seed, idx, capture_video, run_name):
@@ -88,7 +92,7 @@ class QNetwork(nn.Module):
     def __init__(self, env, width=256):
         super().__init__()
         self.width = width
-        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod() + np.prod(env.single_action_space.shape), 256)
+        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod() + np.prod(env.single_action_space.shape), self.width)
         self.fc2 = nn.Linear(self.width, self.width)
         self.fc3 = nn.Linear(self.width, 1)
 
@@ -104,9 +108,10 @@ class Actor(nn.Module):
     def __init__(self, env, width=256):
         super().__init__()
         self.width = width
-        self.fc1 = nn.Linear(np.array(env.single_observation_space.shape).prod(), self.width)
-        self.fc2 = nn.Linear(self.width, self.width)
-        self.fc_mu = nn.Linear(self.width, np.prod(env.single_action_space.shape))
+        state_dim = np.array(env.single_observation_space.shape).prod()
+        self.fc1 = nn.Linear(state_dim, self.width, bias=False)
+        self.fc_mu = nn.Linear(self.width, np.prod(env.single_action_space.shape), bias=False)
+        nn.init.normal_(self.fc1.weight, mean=0.0, std=1/state_dim)
         # action rescaling
         self.register_buffer(
             "action_scale", torch.tensor((env.action_space.high - env.action_space.low) / 2.0, dtype=torch.float32)
@@ -116,9 +121,8 @@ class Actor(nn.Module):
         )
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = torch.tanh(self.fc_mu(x))
+        x = F.gelu(self.fc1(x))
+        x = torch.tanh(self.fc_mu(x)/np.sqrt(self.width))
         return x * self.action_scale + self.action_bias
 
 
@@ -163,14 +167,21 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     envs = gym.vector.SyncVectorEnv([make_env(args.env_id, args.seed, 0, args.capture_video, run_name)])
     assert isinstance(envs.single_action_space, gym.spaces.Box), "only continuous action space is supported"
 
-    actor = Actor(envs).to(device)
-    qf1 = QNetwork(envs).to(device)
-    qf1_target = QNetwork(envs).to(device)
-    target_actor = Actor(envs).to(device)
+    actor = Actor(envs, width=args.actor_width).to(device)
+    qf1 = QNetwork(envs, width=args.critic_width).to(device)
+    qf1_target = QNetwork(envs, width=args.critic_width).to(device)
+    target_actor = Actor(envs, width=args.actor_width).to(device)
     target_actor.load_state_dict(actor.state_dict())
     qf1_target.load_state_dict(qf1.state_dict())
     q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.learning_rate)
-    actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.learning_rate)
+    actor_optimizer = optim.Adam(list(actor.fc1.parameters()), lr=args.learning_rate)
+
+    run_name_sanitized = run_name.replace("/", "") + "_width_" + str(args.actor_width)
+    # make dir for data checkpoint
+    if args.ckpt_n_step > 0:
+        os.makedirs(args.ckpt_dir, exist_ok=True)
+        if not args.ckpt_dir.endswith("/"):
+            args.ckpt_dir = args.ckpt_dir + "/"
 
     envs.single_observation_space.dtype = np.float32
     rb = ReplayBuffer(
@@ -249,6 +260,12 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
                 print("SPS:", int(global_step / (time.time() - start_time)))
                 writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+            if args.ckpt_n_step > 0 and (global_step % args.ckpt_n_step == 0 or global_step - 1 == args.learning_starts):
+                actor_file_out_name = args.ckpt_dir + run_name_sanitized + "_" + str(global_step) + "_actor.pkl"
+                target_actor_file_out_name = args.ckpt_dir + run_name_sanitized + "_" + str(global_step) + "_target_actor.pkl"
+                torch.save(actor.state_dict(), actor_file_out_name)
+                torch.save(target_actor.state_dict(), target_actor_file_out_name)
 
     if args.save_model:
         model_path = f"runs/{run_name}/{args.exp_name}.cleanrl_model"
